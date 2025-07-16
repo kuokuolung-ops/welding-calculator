@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>焊接鋼線網計算器</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    .section { margin-bottom: 40px; }
+    label { display: inline-block; width: 140px; margin-bottom: 8px; }
+    select, input, button { width: 140px; margin-bottom: 8px; }
+    table { border-collapse: collapse; margin-top: 10px; }
+    table, th, td { border: 1px solid #ccc; padding: 8px; }
+  </style>
+</head>
+<body>
+  <h1>焊接鋼線網計算器</h1>
+
+  <div class="section">
+    <h2>1. 板片成本與售價計算</h2>
+    <div>
+      <label>線徑 (mm)：</label>
+      <select id="diameter" onchange="onDiameterChange()">
+        <option value="">請選擇</option>
+      </select><br>
+
+      <label>網孔間距 (cm)：</label>
+      <select id="gap" onchange="onGapChange()">
+        <option value="">請先選擇線徑</option>
+      </select><br>
+
+      <label>單位重量 (kg/m²)：</label>
+      <input id="unitWeight" type="text" readonly placeholder="自動顯示"><br>
+
+      <label>長 (m)：</label>
+      <input id="length" type="number" step="0.01" value="3"><br>
+
+      <label>寬 (m)：</label>
+      <input id="width" type="number" step="0.01" value="2"><br>
+
+      <label>鋼價 (元/kg)：</label>
+      <input id="steelPrice" type="number" step="0.01" value="17.3"><br>
+
+      <label>利潤係數：</label>
+      <input id="profitFactor" type="number" step="0.01" value="1.5"><br>
+
+      <button onclick="calculateSheet()">計算</button>
+    </div>
+
+    <table>
+      <tr><th>板片面積 (m²)</th><th>一片重量 (kg)</th><th>成本 (NT$)</th><th>售價 (NT$)</th></tr>
+      <tr><td id="area"></td><td id="sheetWeight"></td><td id="cost"></td><td id="price"></td></tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>2. 面積 ⇄ 片數 互轉</h2>
+    <div>
+      <label>長 (cm)：</label><input id="convLength" type="number" value="300"><br>
+      <label>寬 (cm)：</label><input id="convWidth" type="number" value="200"><br>
+      <label>需求面積 (m²)：</label><input id="needArea" type="number" value="2568"><br>
+      <button onclick="convertAreaToSheet()">面積→片數</button>
+      <span id="sheetCount"></span><br>
+      <label>片數：</label><input id="convSheet" type="number" value="428"><br>
+      <button onclick="convertSheetToArea()">片數→面積</button>
+      <span id="areaCount"></span>
+    </div>
+  </div>
+
+  <script>
+    // 完整單位重量映射，根據所有規格填寫
+    const weightMap = {
+      "4": {"10*10":1.97,"10*15":1.64,"10*20":1.48,"10*25":1.38,"10*30":1.31,"15*15":1.31,"15*20":1.15,"15*25":1.05,"15*30":0.99,"20*20":0.99,"20*25":0.89,"20*30":0.82,"25*25":0.79,"25*30":0.72,"30*30":0.66},
+      "5": {"10*10":3.08,"10*15":2.57,"10*20":2.31,"10*25":2.16,"10*30":2.05,"15*15":2.05,"15*20":1.8,"15*25":1.64,"15*30":1.54,"20*20":1.54,"20*25":1.39,"20*30":1.28,"25*25":1.23,"25*30":1.13,"30*30":1.03},
+      "5.5": {"10*10":3.73,"10*15":3.11,"10*20":2.8,"10*25":2.61,"10*30":2.49,"15*15":2.49,"15*20":2.18,"15*25":1.99,"15*30":1.86,"20*20":1.86,"20*25":1.68,"20*30":1.55,"25*25":1.49,"25*30":1.37,"30*30":1.24},
+      "6": {"10*10":4.44,"10*15":3.7,"10*20":3.33,"10*25":3.11,"10*30":2.96,"15*15":2.96,"15*20":2.59,"15*25":2.37,"15*30":2.22,"20*20":2.22,"20*25":2.0,"20*30":1.85,"25*25":1.77,"25*30":1.63,"30*30":1.48},
+      "7": {"10*10":6.04,"10*15":5.03,"10*20":4.53,"10*25":4.23,"10*30":4.03,"15*15":4.03,"15*20":3.52,"15*25":3.22,"15*30":3.02,"20*20":3.02,"20*25":2.72,"20*30":2.52,"25*25":2.42,"25*30":2.21,"30*30":2.01},
+      "8": {"10*10":7.89,"10*15":6.57,"10*20":5.92,"10*25":5.52,"10*30":5.26,"15*15":5.26,"15*20":4.6,"15*25":4.21,"15*30":3.94,"20*20":3.94,"20*25":3.55,"20*30":3.29,"25*25":3.16,"25*30":2.89,"30*30":2.63},
+      "9": {"10*10":9.98,"10*15":8.32,"10*20":7.49,"10*25":6.99,"10*30":6.66,"15*15":6.66,"15*20":5.82,"15*25":5.32,"15*30":4.99,"20*20":4.99,"20*25":4.49,"20*30":4.16,"25*25":3.99,"25*30":3.66,"30*30":3.33},
+      "9.5": {"10*10":11.12,"10*15":9.27,"10*20":8.34,"10*25":7.79,"10*30":7.42,"15*15":7.42,"15*20":6.49,"15*25":5.93,"15*30":5.56,"20*20":5.56,"20*25":5.01,"20*30":4.64,"25*25":4.45,"25*30":4.08,"30*30":3.71},
+      "10": {"10*10":12.33,"10*15":10.27,"10*20":9.24,"10*25":8.63,"10*30":8.22,"15*15":8.22,"15*20":7.19,"15*25":6.57,"15*30":6.16,"20*20":6.16,"20*25":5.55,"20*30":5.14,"25*25":4.93,"25*30":4.52,"30*30":4.11},
+      "11": {"10*10":14.95,"10*15":12.45,"10*20":11.21,"10*25":10.46,"10*30":9.96,"15*15":9.96,"15*20":8.72,"15*25":7.97,"15*30":7.47,"20*20":7.47,"20*25":6.72,"20*30":6.23,"25*25":6.72,"25*30":5.48,"30*30":4.98},
+      "12": {"10*10":17.78,"10*15":14.82,"10*20":13.34,"10*25":12.45,"10*30":11.86,"15*15":11.86,"15*20":10.37,"15*25":9.48,"15*30":8.89,"20*20":8.89,"20*25":8.0,"20*30":7.41,"25*25":8.0,"25*30":6.52,"30*30":5.93},
+      "13": {"10*10":20.87,"10*15":17.39,"10*20":15.65,"10*25":14.61,"10*30":13.91,"15*15":13.91,"15*20":12.17,"15*25":11.13,"15*30":10.43,"20*20":10.43,"20*25":9.39,"20*30":8.69,"25*25":8.34,"25*30":7.65,"30*30":6.95},
+      "14": {"10*10":24.17,"10*15":20.14,"10*20":18.13,"10*25":16.92,"10*30":16.11,"15*15":16.11,"15*20":14.1,"15*25":12.89,"15*30":12.08,"20*20":12.08,"20*25":10.88,"20*30":10.07,"25*25":9.67,"25*30":8.86,"30*30":8.06},
+      "15": {"10*10":27.74,"10*15":23.12,"10*20":20.81,"10*25":19.42,"10*30":18.5,"15*15":18.5,"15*20":16.18,"15*25":14.8,"15*30":13.87,"20*20":13.87,"20*25":12.48,"20*30":11.56,"25*25":11.1,"25*30":10.17,"30*30":9.25},
+      "16": {"10*10":31.56,"10*15":26.3,"10*20":23.67,"10*25":22.1,"10*30":21.04,"15*15":21.04,"15*20":18.41,"15*25":16.83,"15*30":15.78,"20*20":15.78,"20*25":14.2,"20*30":13.15,"25*25":12.63,"25*30":11.57,"30*30":10.52}
+    };
+
+    // 初始化選單
+    window.onload = () => {
+      const diam = document.getElementById('diameter');
+      Object.keys(weightMap).sort((a,b) => parseFloat(a)-parseFloat(b)).forEach(d => diam.add(new Option(d, d)));
+    };
+
+    function onDiameterChange() {
+      const d = document.getElementById('diameter').value;
+      const gap = document.getElementById('gap');
+      gap.innerHTML = '<option value="">請選擇網孔</option>';
+      if(weightMap[d]) Object.keys(weightMap[d]).sort((a,b)=>{
+        const [a1,a2]=a.split('*').map(Number), [b1,b2]=b.split('*').map(Number);
+        return (a1*a2)-(b1*b2);
+      }).forEach(g=> gap.add(new Option(g, g)));
+      document.getElementById('unitWeight').value='';
+    }
+
+    function onGapChange() {
+      const d = document.getElementById('diameter').value;
+      const g = document.getElementById('gap').value;
+      const uw = weightMap[d] && weightMap[d][g]!==undefined ? weightMap[d][g] : null;
+      document.getElementById('unitWeight').value = uw!==null ? uw.toFixed(2) : '';
+    }
+
+    function calculateSheet() {
+      const len = parseFloat(document.getElementById('length').value);
+      const wid = parseFloat(document.getElementById('width').value);
+      const uw = parseFloat(document.getElementById('unitWeight').value);
+      if(isNaN(len)||isNaN(wid)||isNaN(uw)) return;
+      const area = len*wid;
+      const w = uw*area;
+      document.getElementById('area').textContent = area.toFixed(2);
+      document.getElementById('sheetWeight').textContent = w.toFixed(2);
+      const cost = w*parseFloat(document.getElementById('steelPrice').value);
+      document.getElementById('cost').textContent = cost.toFixed(2);
+      const sale = cost*parseFloat(document.getElementById('profitFactor').value);
+      document.getElementById('price').textContent = sale.toFixed(2);
+    }
+
+    function convertAreaToSheet() {
+      const a = parseFloat(document.getElementById('needArea').value);
+      const len = parseFloat(document.getElementById('convLength').value)/100;
+      const wid = parseFloat(document.getElementById('convWidth').value)/100;
+      document.getElementById('sheetCount').textContent = (a/(len*wid)).toFixed(2)+' 張';
+    }
+
+    function convertSheetToArea() {
+      const s = parseFloat(document.getElementById('convSheet').value);
+      const len = parseFloat(document.getElementById('convLength').value)/100;
+      const wid = parseFloat(document.getElementById('convWidth').value)/100;
+      document.getElementById('areaCount').textContent = (s*(len*wid)).toFixed(2)+' m²';
+    }
+  </script>
+</body>
+</html>
